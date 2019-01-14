@@ -116,6 +116,24 @@ impl KmsDevice {
         }
     }
 
+    /// Waits up to (sleep * max_poll) milliseconds for the file at the given
+    /// location to exist. Panics if the file isn't created within that time
+    /// period.
+    fn wait_for_file(file_path: &str, sleep: u64, max_poll: u64) {
+        let mut created = false;
+        for i in 0..max_poll {
+            created = std::path::Path::new(&file_path).exists();
+            if created {
+                println!("Detected socket after {} iterations!", i);
+                break
+            }
+            thread::sleep(time::Duration::from_millis(sleep));
+        }
+        if !created {
+            panic!("Failed to detect the creation of file in time: {}", file_path);
+        }
+    }
+
     /// Spawn the KMS process and connect to the Unix listener
     pub fn create_unix() -> Self {
         // Create a random socket path and a config file
@@ -129,9 +147,10 @@ impl KmsDevice {
         let args = &["start", "-c", config.path().to_str().unwrap()];
         let process = Command::new(KMS_EXE_PATH).args(args).spawn().unwrap();
 
-        // TODO(amr): find a better way to wait
-        // Sleep for 1s to give the process a chance to create a UnixListener
-        thread::sleep(time::Duration::from_millis(100));
+        // Poll for the creation of the Unix socket for up to 1s. There doesn't
+        // seem to be a much more elegant way of handling this right now, since
+        // we're relying on execution of a sub-process for these tests.
+        KmsDevice::wait_for_file(&socket_path, 100, 10);
 
         let socket = UnixStream::connect(socket_path).unwrap();
         Self {
